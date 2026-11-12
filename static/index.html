@@ -2,93 +2,1025 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>IIAAS field monitor</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#2d6a3d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>IIAAS Field Monitor</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/static/icons/icon-192.png">
 <style>
-:root{--bg:#f1f4ee;--ink:#1b2a20;--mut:#5a6a5f;--line:#d2dacd;--g:#2d6a3d;--w:#2a69ad;--warn:#9a6208;--bad:#b0342a;--ok:#2d6a3d}
-@media(prefers-color-scheme:dark){:root{--bg:#111812;--ink:#e5ede7;--mut:#92a398;--line:#29362d;--g:#6fc283;--w:#72aae8;--warn:#e0a53c;--bad:#ef7a6c;--ok:#6fc283}}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-header{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 20px;padding:20px 24px 8px;max-width:1100px;margin:auto}
-h1{font-size:1.5rem;margin:0;font-weight:700;letter-spacing:-.01em}
-#status{font-size:.9rem;color:var(--mut)}
-#status b{color:var(--ink)}
-main{max-width:1100px;margin:auto;padding:8px 24px 40px;display:grid;gap:28px}
-.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:28px}
-h2{font-size:1.05rem;margin:0 0 4px}
-.sub{color:var(--mut);font-size:.88rem;margin:0 0 10px}
-dl{margin:0}
-.row{display:flex;justify-content:space-between;align-items:baseline;padding:8px 0;border-bottom:1px solid var(--line)}
-dt{color:var(--mut)}
-dd{margin:0;font-size:1.35rem;font-variant-numeric:tabular-nums;font-weight:600}
-dd small{font-size:.85rem;color:var(--mut);font-weight:400;margin-left:3px}
-canvas{width:100%;height:240px;display:block}
-.legend{display:flex;gap:18px;font-size:.88rem;color:var(--mut);margin-top:6px}
-.legend i{display:inline-block;width:18px;height:3px;vertical-align:middle;margin-right:6px}
-ul{list-style:none;margin:0;padding:0}
-li{padding:10px 12px;border-left:4px solid var(--line);background:color-mix(in srgb,var(--bg) 85%,var(--ink) 4%);margin-bottom:8px}
-li.bad{border-color:var(--bad)}li.warn{border-color:var(--warn)}li.ok{border-color:var(--ok)}li.info{border-color:var(--w)}
+/* ═══════════════════════════════════════════════════
+   DESIGN TOKENS
+═══════════════════════════════════════════════════ */
+:root {
+  --bg:       #f1f4ee;
+  --surface:  #ffffff;
+  --ink:      #1b2a20;
+  --mut:      #5a6a5f;
+  --line:     #d2dacd;
+  --g:        #2d6a3d;
+  --g-light:  #e8f2ea;
+  --g-dark:   #1d4a2b;
+  --w:        #2a69ad;
+  --w-light:  #e3edf8;
+  --warn:     #9a6208;
+  --warn-bg:  #fef3cd;
+  --bad:      #b0342a;
+  --bad-bg:   #fde8e6;
+  --ok:       #2d6a3d;
+  --ok-bg:    #e8f2ea;
+  --info-bg:  #e3edf8;
+  --radius:   10px;
+  --shadow:   0 1px 4px rgba(0,0,0,.08), 0 4px 16px rgba(0,0,0,.06);
+  --shadow-sm:0 1px 3px rgba(0,0,0,.07);
+  --nav-h:    56px;
+  --banner-h: 0px;
+  --font: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+@media(prefers-color-scheme:dark) {
+  :root {
+    --bg:#111812; --surface:#1c261e; --ink:#e5ede7; --mut:#92a398;
+    --line:#29362d; --g:#6fc283; --g-light:#1c2f1f; --g-dark:#8fd09a;
+    --w:#72aae8; --w-light:#1a2535; --warn:#e0a53c; --warn-bg:#2a1f08;
+    --bad:#ef7a6c; --bad-bg:#2d1210; --ok:#6fc283; --ok-bg:#1c2f1f;
+    --info-bg:#1a2535;
+    --shadow:0 1px 4px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+    --shadow-sm:0 1px 3px rgba(0,0,0,.25);
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   RESET & BASE
+═══════════════════════════════════════════════════ */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{
+  background:var(--bg);color:var(--ink);
+  font:16px/1.5 var(--font);
+  padding-top:calc(var(--nav-h) + var(--banner-h));
+  min-height:100dvh;
+}
 a{color:var(--w)}
-:focus-visible{outline:3px solid var(--w);outline-offset:2px}
+:focus-visible{outline:3px solid var(--w);outline-offset:2px;border-radius:3px}
+button{cursor:pointer;font:inherit}
+img{max-width:100%;height:auto}
+
+/* ═══════════════════════════════════════════════════
+   TOP NAV
+═══════════════════════════════════════════════════ */
+#topnav {
+  position:fixed;top:0;left:0;right:0;z-index:200;
+  height:var(--nav-h);
+  background:var(--g);color:#fff;
+  display:flex;align-items:center;gap:0;
+  box-shadow:0 2px 8px rgba(0,0,0,.2);
+}
+#topnav .brand{
+  display:flex;align-items:center;gap:10px;
+  padding:0 16px;font-weight:700;font-size:1.05rem;
+  letter-spacing:-.01em;white-space:nowrap;flex-shrink:0;
+}
+#topnav .brand svg{flex-shrink:0}
+#navtabs{display:flex;align-items:stretch;flex:1;overflow:hidden}
+.navbtn{
+  display:flex;align-items:center;gap:6px;
+  padding:0 18px;height:var(--nav-h);
+  background:transparent;border:none;color:rgba(255,255,255,.75);
+  font-size:.92rem;font-weight:500;letter-spacing:.01em;
+  border-bottom:3px solid transparent;
+  transition:color .15s,border-color .15s,background .15s;
+  white-space:nowrap;
+}
+.navbtn:hover{color:#fff;background:rgba(255,255,255,.1)}
+.navbtn.active{color:#fff;border-bottom-color:#fff}
+#statusbadge{
+  margin-left:auto;padding:0 16px;
+  font-size:.8rem;display:flex;align-items:center;gap:6px;
+  color:rgba(255,255,255,.8);flex-shrink:0;
+}
+.dot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.4)}
+.dot.live{background:#a3e6b0;box-shadow:0 0 0 2px rgba(163,230,176,.4)}
+.dot.sim{background:#ffd580}
+.dot.off{background:#ef7a6c}
+
+/* ═══════════════════════════════════════════════════
+   ALERT BANNER
+═══════════════════════════════════════════════════ */
+#alertbanner {
+  position:fixed;top:var(--nav-h);left:0;right:0;z-index:190;
+  background:var(--bad);color:#fff;
+  padding:10px 16px;
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  font-size:.88rem;font-weight:500;
+  box-shadow:0 2px 8px rgba(0,0,0,.2);
+}
+#alertbanner.hidden{display:none!important}
+#alertbanner .banner-icon{font-size:1.1rem;flex-shrink:0}
+#alertbanner .banner-msgs{flex:1;min-width:0}
+#alertbanner .banner-actions{display:flex;gap:6px;flex-shrink:0}
+.banner-btn{
+  background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);
+  color:#fff;border-radius:5px;padding:4px 10px;font-size:.8rem;
+  transition:background .15s;
+}
+.banner-btn:hover{background:rgba(255,255,255,.35)}
+
+/* ═══════════════════════════════════════════════════
+   PAGES
+═══════════════════════════════════════════════════ */
+.page{display:none}
+.page.active{display:block}
+
+/* ═══════════════════════════════════════════════════
+   LAYOUT / CONTAINERS
+═══════════════════════════════════════════════════ */
+.container{max-width:1140px;margin:0 auto;padding:20px 16px 48px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:20px}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
+section+section{margin-top:28px}
+
+/* ═══════════════════════════════════════════════════
+   CARDS
+═══════════════════════════════════════════════════ */
+.card{
+  background:var(--surface);border-radius:var(--radius);
+  box-shadow:var(--shadow);overflow:hidden;
+}
+.card-head{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 18px 10px;border-bottom:1px solid var(--line);
+}
+.card-title{font-size:1rem;font-weight:600;display:flex;align-items:center;gap:8px}
+.card-sub{font-size:.8rem;color:var(--mut);margin-top:2px}
+.card-body{padding:14px 18px}
+
+/* stat row inside node card */
+.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:0}
+.stat-cell{
+  padding:11px 14px;border-bottom:1px solid var(--line);
+  display:flex;flex-direction:column;gap:3px;
+}
+.stat-cell:nth-child(odd){border-right:1px solid var(--line)}
+.stat-label{font-size:.78rem;color:var(--mut);font-weight:500}
+.stat-value{font-size:1.3rem;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
+.stat-unit{font-size:.8rem;color:var(--mut);font-weight:400;margin-left:2px}
+.stat-cell.relay-on .stat-value{color:var(--g)}
+.stat-cell.relay-off .stat-value{color:var(--mut)}
+
+/* node status chip */
+.node-age{font-size:.78rem;padding:3px 8px;border-radius:20px;font-weight:500}
+.node-age.ok{background:var(--ok-bg);color:var(--ok)}
+.node-age.warn{background:var(--warn-bg);color:var(--warn)}
+.node-age.bad{background:var(--bad-bg);color:var(--bad)}
+.node-age.none{background:var(--line);color:var(--mut)}
+
+/* ═══════════════════════════════════════════════════
+   WEATHER / CONDITION CARDS
+═══════════════════════════════════════════════════ */
+.weather-card{
+  background:linear-gradient(135deg,var(--g) 0%,var(--g-dark) 100%);
+  color:#fff;border-radius:var(--radius);padding:20px;
+  box-shadow:var(--shadow);
+}
+.weather-card h3{font-size:.85rem;opacity:.8;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px}
+.weather-main{display:flex;align-items:flex-end;gap:16px;margin-bottom:14px}
+.weather-temp{font-size:3rem;font-weight:700;line-height:1}
+.weather-meta{font-size:.88rem;opacity:.85;line-height:1.6}
+.weather-pills{display:flex;flex-wrap:wrap;gap:8px}
+.weather-pill{
+  background:rgba(255,255,255,.18);border-radius:20px;
+  padding:5px 12px;font-size:.82rem;display:flex;align-items:center;gap:5px;
+}
+.weather-note{font-size:.75rem;opacity:.65;margin-top:10px;font-style:italic}
+
+/* ═══════════════════════════════════════════════════
+   RECOMMENDATION CARDS
+═══════════════════════════════════════════════════ */
+.rec-list{display:flex;flex-direction:column;gap:8px;padding:14px 18px}
+.rec-item{
+  display:flex;align-items:flex-start;gap:10px;
+  padding:10px 12px;border-radius:7px;border-left:4px solid var(--line);
+  background:color-mix(in srgb,var(--surface) 85%,var(--ink) 3%);
+  font-size:.88rem;line-height:1.45;
+}
+.rec-item.bad{border-color:var(--bad);background:var(--bad-bg)}
+.rec-item.warn{border-color:var(--warn);background:var(--warn-bg)}
+.rec-item.ok{border-color:var(--ok);background:var(--ok-bg)}
+.rec-item.info{border-color:var(--w);background:var(--info-bg)}
+.rec-icon{font-size:1rem;flex-shrink:0;margin-top:.1em}
+
+/* ═══════════════════════════════════════════════════
+   CHART
+═══════════════════════════════════════════════════ */
+.chart-wrap{padding:14px 18px 18px}
+.chart-controls{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
+.chart-controls span{font-size:.8rem;color:var(--mut);margin-right:4px}
+.filter-btn{
+  background:var(--bg);border:1px solid var(--line);border-radius:20px;
+  color:var(--mut);padding:4px 13px;font-size:.8rem;font-weight:500;
+  transition:all .15s;
+}
+.filter-btn:hover{border-color:var(--g);color:var(--g)}
+.filter-btn.active{background:var(--g);border-color:var(--g);color:#fff}
+canvas{width:100%;height:220px;display:block;border-radius:4px}
+.chart-legend{display:flex;gap:16px;font-size:.8rem;color:var(--mut);margin-top:8px}
+.chart-legend span{display:flex;align-items:center;gap:5px}
+.chart-legend i{display:inline-block;width:20px;height:3px;vertical-align:middle;border-radius:2px}
+
+/* ═══════════════════════════════════════════════════
+   PUMP HISTORY
+═══════════════════════════════════════════════════ */
+.pump-timeline{padding:0 18px 14px;display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto}
+.pump-event{
+  display:flex;align-items:center;gap:10px;
+  padding:8px 10px;border-radius:6px;font-size:.84rem;
+  background:color-mix(in srgb,var(--surface) 85%,var(--ink) 3%);
+  border-left:3px solid var(--line);
+}
+.pump-event.on{border-color:var(--g)}
+.pump-event.off{border-color:var(--mut)}
+.pump-badge{
+  font-size:.72rem;font-weight:700;padding:2px 7px;border-radius:12px;
+  flex-shrink:0;text-transform:uppercase;letter-spacing:.04em;
+}
+.pump-badge.on{background:var(--ok-bg);color:var(--ok)}
+.pump-badge.off{background:var(--line);color:var(--mut)}
+.pump-ts{color:var(--mut);font-size:.8rem;flex:1}
+.pump-dur{color:var(--mut);font-size:.8rem;text-align:right}
+.pump-empty{padding:14px 18px;color:var(--mut);font-size:.88rem;font-style:italic}
+
+/* ═══════════════════════════════════════════════════
+   ALERTS PAGE
+═══════════════════════════════════════════════════ */
+.alerts-toolbar{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:14px 18px;border-bottom:1px solid var(--line);
+}
+.toggle-group{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.toggle-btn{
+  background:transparent;border:none;padding:6px 14px;font-size:.82rem;
+  color:var(--mut);font-weight:500;transition:all .15s;
+}
+.toggle-btn.active{background:var(--g);color:#fff}
+.alerts-count{font-size:.82rem;color:var(--mut);margin-left:auto}
+.alerts-list{display:flex;flex-direction:column;gap:8px;padding:14px 18px}
+.alert-row{
+  display:flex;align-items:flex-start;gap:12px;
+  padding:12px 14px;border-radius:8px;
+  border-left:4px solid var(--line);
+  background:color-mix(in srgb,var(--surface) 90%,var(--ink) 3%);
+  transition:opacity .2s;
+}
+.alert-row.bad{border-color:var(--bad);background:var(--bad-bg)}
+.alert-row.warn{border-color:var(--warn);background:var(--warn-bg)}
+.alert-row.ok{border-color:var(--ok);background:var(--ok-bg)}
+.alert-row.acked{opacity:.5}
+.alert-body{flex:1;min-width:0}
+.alert-msg{font-size:.88rem;line-height:1.45}
+.alert-meta{font-size:.76rem;color:var(--mut);margin-top:3px;display:flex;gap:10px;flex-wrap:wrap}
+.ack-btn{
+  background:transparent;border:1px solid var(--line);border-radius:5px;
+  color:var(--mut);padding:4px 10px;font-size:.78rem;flex-shrink:0;
+  transition:all .15s;white-space:nowrap;
+}
+.ack-btn:hover{border-color:var(--g);color:var(--g)}
+.alerts-empty{padding:32px 18px;text-align:center;color:var(--mut);font-size:.9rem}
+.load-more{
+  margin:8px 18px 18px;padding:9px;border-radius:6px;
+  background:transparent;border:1px dashed var(--line);
+  color:var(--mut);font-size:.84rem;width:calc(100% - 36px);
+  transition:all .15s;
+}
+.load-more:hover{border-color:var(--g);color:var(--g)}
+
+/* ═══════════════════════════════════════════════════
+   SECTION HEADER
+═══════════════════════════════════════════════════ */
+.section-hd{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.section-hd h2{font-size:1rem;font-weight:600}
+.section-hd .badge{
+  font-size:.74rem;padding:2px 8px;border-radius:12px;font-weight:600;
+  background:var(--g-light);color:var(--g);
+}
+
+/* ═══════════════════════════════════════════════════
+   FOOTER
+═══════════════════════════════════════════════════ */
+.page-footer{
+  padding:8px 16px 16px;text-align:center;
+  font-size:.78rem;color:var(--mut);
+}
+.page-footer a{color:var(--w)}
+
+/* ═══════════════════════════════════════════════════
+   RESPONSIVE
+═══════════════════════════════════════════════════ */
+@media(max-width:600px){
+  #topnav .brand .brand-name{display:none}
+  .navbtn{padding:0 12px;font-size:.85rem}
+  .container{padding:16px 10px 48px}
+  .stat-value{font-size:1.1rem}
+  .weather-temp{font-size:2.4rem}
+  canvas{height:180px}
+}
+@media(max-width:400px){
+  .navbtn .nav-text{display:none}
+  .navbtn{padding:0 10px}
+}
 </style>
 </head>
 <body>
-<header>
-  <h1>IIAAS field monitor</h1>
-  <span id="status" role="status">Connecting…</span>
-</header>
-<main>
-  <section aria-labelledby="rec">
-    <h2 id="rec">What to do now</h2>
-    <p class="sub">Rule-based advice. Fertilizer limits are placeholders until sensor units are confirmed.</p>
-    <ul id="insights"></ul>
-  </section>
-  <div class="cols">
-    <section aria-labelledby="n1"><h2 id="n1">Node 1: air and irrigation</h2><p class="sub" id="n1age">No data yet</p><dl id="d1"></dl></section>
-    <section aria-labelledby="n2"><h2 id="n2">Node 2: soil chemistry</h2><p class="sub" id="n2age">No data yet</p><dl id="d2"></dl></section>
+
+<!-- ═══════════════════════════════════════════════════
+     TOP NAVIGATION
+════════════════════════════════════════════════════ -->
+<nav id="topnav" role="navigation" aria-label="Main navigation">
+  <div class="brand">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="10" fill="rgba(255,255,255,0.2)"/>
+      <path d="M12 4c0 0-5 3-5 8 0 3.3 2.2 6 5 7 2.8-1 5-3.7 5-7 0-5-5-8-5-8z" fill="white"/>
+      <path d="M12 10v8M9 14h6" stroke="rgba(45,106,61,0.8)" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>
+    <span class="brand-name">IIAAS</span>
   </div>
-  <section aria-labelledby="ch">
-    <h2 id="ch">Soil moisture over time</h2>
-    <p class="sub">Dashed line is the 40% irrigation limit.</p>
-    <canvas id="chart" role="img" aria-label="Soil moisture history for both nodes"></canvas>
-    <div class="legend"><span><i style="background:var(--g)"></i>Node 1</span><span><i style="background:var(--w)"></i>Node 2</span></div>
+  <div id="navtabs" role="tablist">
+    <button class="navbtn active" role="tab" aria-selected="true" aria-controls="page-dashboard" onclick="showPage('dashboard',this)">
+      <span>📊</span> <span class="nav-text">Dashboard</span>
+    </button>
+    <button class="navbtn" role="tab" aria-selected="false" aria-controls="page-alerts" onclick="showPage('alerts',this)">
+      <span>🔔</span> <span class="nav-text">Alerts</span> <span id="alertcount" style="display:none;background:rgba(255,255,255,0.3);border-radius:10px;padding:1px 6px;font-size:.72rem"></span>
+    </button>
+  </div>
+  <div id="statusbadge" aria-live="polite">
+    <span class="dot" id="statusdot"></span>
+    <span id="statustext">Connecting…</span>
+  </div>
+</nav>
+
+<!-- ═══════════════════════════════════════════════════
+     ACTIVE-PROBLEM BANNER
+════════════════════════════════════════════════════ -->
+<div id="alertbanner" class="hidden" role="alert" aria-live="assertive">
+  <span class="banner-icon">⚠️</span>
+  <span class="banner-msgs" id="bannermsg">Active alerts detected</span>
+  <div class="banner-actions">
+    <button class="banner-btn" onclick="toggleMute()" id="mutebtn" aria-label="Toggle alert sound">🔔 Mute</button>
+    <button class="banner-btn" onclick="dismissBanner()" aria-label="Dismiss banner">✕ Dismiss</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     DASHBOARD PAGE
+════════════════════════════════════════════════════ -->
+<div id="page-dashboard" class="page active" role="tabpanel">
+<div class="container">
+
+  <!-- WEATHER / CONDITIONS ROW -->
+  <section aria-labelledby="cond-hd">
+    <div class="section-hd"><h2 id="cond-hd">Field Conditions</h2><span class="badge" id="cond-badge">Measured</span></div>
+    <div class="grid3">
+      <div class="weather-card" id="air-card">
+        <h3>🌡 Air Conditions · Node 1</h3>
+        <div class="weather-main">
+          <div class="weather-temp" id="wc-temp">–</div>
+          <div class="weather-meta">
+            <div>Humidity <strong id="wc-hum">–</strong></div>
+            <div>eCO₂ <strong id="wc-eco2">–</strong></div>
+          </div>
+        </div>
+        <div class="weather-pills">
+          <span class="weather-pill">💧 <span id="wc-soil1">–</span> soil</span>
+          <span class="weather-pill">🌊 <span id="wc-water">–</span> water raw</span>
+          <span class="weather-pill">🫧 <span id="wc-mq135">–</span> MQ-135</span>
+        </div>
+        <p class="weather-note" id="weather-note">All values are measured by on-field sensors. No external weather forecast.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <div class="card-title">🌱 Soil Chemistry · Node 2</div>
+            <div class="card-sub" id="n2-sub">No data</div>
+          </div>
+          <span class="node-age none" id="n2-age">–</span>
+        </div>
+        <div class="stat-grid" id="chem-grid">
+          <!-- filled by JS -->
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <div class="card-title">💧 Irrigation · Node 1</div>
+            <div class="card-sub" id="n1-sub">No data</div>
+          </div>
+          <span class="node-age none" id="n1-age">–</span>
+        </div>
+        <div class="stat-grid" id="irr-grid">
+          <!-- filled by JS -->
+        </div>
+      </div>
+    </div>
   </section>
-  <p><a href="/api/export.csv">Download readings (CSV)</a></p>
-</main>
+
+  <!-- RECOMMENDATIONS -->
+  <section aria-labelledby="rec-hd">
+    <div class="section-hd" style="margin-top:28px"><h2 id="rec-hd">Recommendations</h2><span class="badge">Rule-based</span></div>
+    <div class="card">
+      <div class="rec-list" id="insights-list">
+        <div class="rec-item"><span class="rec-icon">⏳</span> Loading…</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SOIL MOISTURE CHART -->
+  <section aria-labelledby="ch-hd" style="margin-top:28px">
+    <div class="section-hd"><h2 id="ch-hd">Soil Moisture History</h2></div>
+    <div class="card">
+      <div class="chart-wrap">
+        <div class="chart-controls">
+          <span>Show:</span>
+          <button class="filter-btn" data-hours="1" onclick="setTimeFilter(1,this)">1 Hour</button>
+          <button class="filter-btn active" data-hours="24" onclick="setTimeFilter(24,this)">24 Hours</button>
+          <button class="filter-btn" data-hours="0" onclick="setTimeFilter(0,this)">All</button>
+        </div>
+        <canvas id="chart" role="img" aria-label="Soil moisture history for Node 1 and Node 2"></canvas>
+        <div class="chart-legend">
+          <span><i style="background:var(--g)"></i>Node 1</span>
+          <span><i style="background:var(--w)"></i>Node 2</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PUMP HISTORY -->
+  <section aria-labelledby="pump-hd" style="margin-top:28px">
+    <div class="section-hd"><h2 id="pump-hd">Pump ON/OFF History</h2></div>
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">⚡ Relay Events (Node 1)</div>
+        <span class="card-sub" id="pump-sub">Derived from relay state transitions</span>
+      </div>
+      <div id="pump-timeline" class="pump-timeline">
+        <div class="pump-empty">Loading pump events…</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <div class="page-footer">
+    <a href="/api/export.csv">⬇ Download CSV</a> ·
+    <span id="refresh-ts">Auto-refreshing every 5 s</span>
+  </div>
+
+</div><!-- /container -->
+</div><!-- /page-dashboard -->
+
+<!-- ═══════════════════════════════════════════════════
+     ALERTS PAGE
+════════════════════════════════════════════════════ -->
+<div id="page-alerts" class="page" role="tabpanel">
+<div class="container">
+
+  <div class="card" style="margin-bottom:0">
+    <div class="alerts-toolbar">
+      <div class="toggle-group" role="group" aria-label="Alert filter">
+        <button class="toggle-btn active" onclick="setAlertFilter('all',this)">All</button>
+        <button class="toggle-btn" onclick="setAlertFilter('active',this)">Active</button>
+        <button class="toggle-btn" onclick="setAlertFilter('acked',this)">Dismissed</button>
+      </div>
+      <span class="alerts-count" id="alerts-count"></span>
+      <button class="filter-btn" onclick="loadAlerts()" style="margin-left:auto">↻ Refresh</button>
+    </div>
+    <div id="alerts-list" class="alerts-list">
+      <div class="alerts-empty">Loading alerts…</div>
+    </div>
+    <button class="load-more" id="alerts-loadmore" onclick="loadMoreAlerts()" style="display:none">Load more…</button>
+  </div>
+
+</div>
+</div>
+
 <script>
-const F1=[["air_temp","Air temperature","°C",1],["humidity","Humidity","%",0],["soil_moisture","Soil moisture","%",0],["water_raw","Water level (raw)","",0],["mq135_raw","MQ-135 (raw)","",0],["eco2_ppm","eCO₂ estimate","ppm",0],["relay","Pump relay","",-1]];
-const F2=[["soil_temp","Soil temperature","°C",1],["soil_moisture","Soil moisture","%",1],["ph","pH","",1],["n","Nitrogen","",0],["p","Phosphorus","",0],["k","Potassium","",0]];
-const $=s=>document.querySelector(s);
-function fmt(v,dp){if(v==null)return"–";if(dp===-1)return v?"On":"Off";return Number(v).toFixed(dp)}
-function rows(el,fields,d){el.innerHTML=fields.map(([k,l,u,dp])=>`<div class="row"><dt>${l}</dt><dd>${fmt(d&&d[k],dp)}<small>${u}</small></dd></div>`).join("")}
-function age(s){return s<60?Math.round(s)+" s ago":Math.round(s/60)+" min ago"}
-function chart(h){
-  const c=$("#chart"),r=devicePixelRatio||1,W=c.clientWidth,H=c.clientHeight;c.width=W*r;c.height=H*r;
-  const x=c.getContext("2d");x.scale(r,r);x.clearRect(0,0,W,H);
-  const css=getComputedStyle(document.documentElement),col=n=>css.getPropertyValue(n).trim();
-  const P={l:34,r:8,t:8,b:20},pw=W-P.l-P.r,ph=H-P.t-P.b,Y=v=>P.t+ph*(1-v/100);
-  x.font="12px system-ui";x.fillStyle=col("--mut");x.strokeStyle=col("--line");x.lineWidth=1;
-  [0,25,50,75,100].forEach(v=>{x.beginPath();x.moveTo(P.l,Y(v));x.lineTo(W-P.r,Y(v));x.stroke();x.fillText(v,4,Y(v)+4)});
-  x.setLineDash([6,4]);x.strokeStyle=col("--bad");x.beginPath();x.moveTo(P.l,Y(40));x.lineTo(W-P.r,Y(40));x.stroke();x.setLineDash([]);
-  if(!h.length)return;const t0=h[0].ts,t1=h[h.length-1].ts||t0+1,X=t=>P.l+pw*((t-t0)/Math.max(t1-t0,1));
-  [[1,"--g"],[2,"--w"]].forEach(([n,cv])=>{
-    const pts=h.filter(p=>p.node===n&&p.soil_moisture!=null);if(!pts.length)return;
-    x.strokeStyle=col(cv);x.lineWidth=2.5;x.beginPath();pts.forEach((p,i)=>i?x.lineTo(X(p.ts),Y(p.soil_moisture)):x.moveTo(X(p.ts),Y(p.soil_moisture)));x.stroke()});
+/* ═══════════════════════════════════════════════════
+   STATE
+═══════════════════════════════════════════════════ */
+let currentTimeHours = 24; // default 24-hour chart
+let alertFilter = 'all';
+let alertsOffset = 0;
+const ALERTS_PAGE = 30;
+let allAlertsCache = [];
+let muted = false;
+let bannerDismissed = false;
+let audioCtx = null;
+let lastBeepKey = '';  // prevent repeated beeping for same set of alerts
+let lastActiveKeys = new Set();
+
+/* ═══════════════════════════════════════════════════
+   NAVIGATION
+═══════════════════════════════════════════════════ */
+function showPage(name, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.navbtn').forEach(b => { b.classList.remove('active'); b.setAttribute('aria-selected','false'); });
+  document.getElementById('page-' + name).classList.add('active');
+  btn.classList.add('active'); btn.setAttribute('aria-selected','true');
+  if (name === 'alerts') loadAlerts();
 }
-async function tick(){
-  try{
-    const [L,I,H]=await Promise.all(["/api/latest","/api/insights","/api/history?limit=200"].map(u=>fetch(u).then(r=>r.json())));
-    const n1=L.nodes[1],n2=L.nodes[2];
-    rows($("#d1"),F1,n1&&n1.data);rows($("#d2"),F2,n2&&n2.data);
-    $("#n1age").textContent=n1?"Updated "+age(L.now-n1.ts):"No data yet";
-    $("#n2age").textContent=n2?"Updated "+age(L.now-n2.ts):"No data yet";
-    $("#insights").innerHTML=I.map(i=>`<li class="${i.level}">${i.msg}</li>`).join("");
-    const sim=[n1,n2].some(n=>n&&n.source==="sim");
-    $("#status").innerHTML=(n1||n2)?(sim?"<b>Simulated data.</b> Not from the field.":"<b>Live</b> from the field"):"Waiting for the first reading";
-    chart(H);
-  }catch(e){$("#status").textContent="Cannot reach the server"}
+
+/* ═══════════════════════════════════════════════════
+   AUDIO ALERT (Web Audio API — no external file)
+═══════════════════════════════════════════════════ */
+function ensureAudioCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
 }
-tick();setInterval(tick,3000);addEventListener("resize",tick);
+function beep() {
+  if (muted) return;
+  try {
+    ensureAudioCtx();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + 0.4);
+    gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
+    osc.start(audioCtx.currentTime);
+    osc.stop(audioCtx.currentTime + 0.5);
+  } catch(e) { /* browser audio blocked — silent fail */ }
+}
+function toggleMute() {
+  muted = !muted;
+  document.getElementById('mutebtn').textContent = muted ? '🔇 Unmute' : '🔔 Mute';
+}
+let currentActiveAlerts = [];
+async function dismissBanner() {
+  document.getElementById('alertbanner').classList.add('hidden');
+  document.documentElement.style.setProperty('--banner-h', '0px');
+  if (currentActiveAlerts && currentActiveAlerts.length) {
+    try {
+      await Promise.all(currentActiveAlerts.map(a =>
+        fetch(`/api/alerts/${a.id}/ack`, {method:'POST'}).catch(() => {})
+      ));
+      currentActiveAlerts = [];
+      await loadAndRender();
+      if (document.getElementById('page-alerts').classList.contains('active')) {
+        await loadAlerts();
+      }
+    } catch(e) {}
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   HELPERS
+═══════════════════════════════════════════════════ */
+function fmt(v, dp) {
+  if (v == null) return '–';
+  if (dp === -1) return v ? 'On' : 'Off';
+  return Number(v).toFixed(dp);
+}
+function fmtTs(ts) {
+  const d = new Date(ts * 1000);
+  return d.toLocaleString(undefined, {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+}
+function ageLabel(secs) {
+  if (secs < 60) return Math.round(secs) + 's ago';
+  if (secs < 3600) return Math.round(secs/60) + ' min ago';
+  return Math.round(secs/3600) + ' hr ago';
+}
+function ageClass(secs, offlineS) {
+  if (secs > offlineS) return 'bad';
+  if (secs > offlineS * 0.5) return 'warn';
+  return 'ok';
+}
+function fmtDuration(s) {
+  if (s == null) return '';
+  if (s < 60) return s.toFixed(0) + 's';
+  return Math.round(s/60) + ' min ' + (s%60).toFixed(0) + 's';
+}
+const OFFLINE_S = 120;
+
+/* ═══════════════════════════════════════════════════
+   CHART
+═══════════════════════════════════════════════════ */
+function setTimeFilter(hours, btn) {
+  currentTimeHours = hours;
+  document.querySelectorAll('.filter-btn[data-hours]').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  loadAndRender();
+}
+
+function drawChart(h) {
+  const c = document.getElementById('chart');
+  const r = devicePixelRatio || 1;
+  const W = c.clientWidth, H = c.clientHeight;
+  c.width = W * r; c.height = H * r;
+  const x = c.getContext('2d'); x.scale(r, r);
+  x.clearRect(0, 0, W, H);
+  const css = getComputedStyle(document.documentElement);
+  const col = n => css.getPropertyValue(n).trim();
+  const P = {l:38,r:12,t:10,b:22};
+  const pw = W-P.l-P.r, ph = H-P.t-P.b;
+  const Y = v => P.t + ph*(1 - v/100);
+
+  // Grid lines
+  x.font = '11px ' + css.getPropertyValue('--font');
+  x.fillStyle = col('--mut');
+  x.strokeStyle = col('--line');
+  x.lineWidth = 1;
+  [0,25,50,75,100].forEach(v => {
+    x.beginPath(); x.moveTo(P.l, Y(v)); x.lineTo(W-P.r, Y(v)); x.stroke();
+    x.fillText(v+'%', 2, Y(v)+4);
+  });
+
+  // Irrigation threshold dashed line
+  x.setLineDash([6,4]);
+  x.strokeStyle = col('--bad');
+  x.lineWidth = 1.5;
+  x.beginPath(); x.moveTo(P.l, Y(40)); x.lineTo(W-P.r, Y(40)); x.stroke();
+  x.setLineDash([]);
+
+  if (!h.length) return;
+  const t0 = h[0].ts, t1 = h[h.length-1].ts || t0+1;
+  const X = t => P.l + pw*((t-t0)/Math.max(t1-t0,1));
+
+  [[1,'--g'],[2,'--w']].forEach(([n,cv]) => {
+    const pts = h.filter(p => p.node===n && p.soil_moisture!=null);
+    if (!pts.length) return;
+    x.strokeStyle = col(cv); x.lineWidth = 2.5;
+    x.beginPath();
+    pts.forEach((p,i) => i ? x.lineTo(X(p.ts), Y(p.soil_moisture)) : x.moveTo(X(p.ts), Y(p.soil_moisture)));
+    x.stroke();
+    // Fill area under curve
+    x.globalAlpha = 0.07;
+    x.fillStyle = col(cv);
+    x.lineTo(X(pts[pts.length-1].ts), Y(0));
+    x.lineTo(X(pts[0].ts), Y(0));
+    x.closePath(); x.fill();
+    x.globalAlpha = 1;
+  });
+
+  // X-axis time labels
+  const labels = 5;
+  x.fillStyle = col('--mut');
+  x.font = '10px ' + css.getPropertyValue('--font');
+  for (let i=0; i<=labels; i++) {
+    const t = t0 + (t1-t0)*(i/labels);
+    const lx = X(t);
+    const d = new Date(t*1000);
+    const label = d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
+    x.fillText(label, Math.min(lx, W-30), H-4);
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   PUMP HISTORY
+═══════════════════════════════════════════════════ */
+async function loadPumpEvents() {
+  try {
+    const events = await fetch('/api/pump-events?limit=50').then(r=>r.json());
+    const el = document.getElementById('pump-timeline');
+    if (!events.length) {
+      el.innerHTML = '<div class="pump-empty">No pump state changes recorded yet. Relay transitions are detected automatically from Node 1 readings.</div>';
+      return;
+    }
+    el.innerHTML = events.map(e => {
+      const badge = e.event === 'on'
+        ? '<span class="pump-badge on">ON</span>'
+        : '<span class="pump-badge off">OFF</span>';
+      const soil = e.soil_moisture != null ? ` · Soil ${e.soil_moisture.toFixed(0)}%` : '';
+      const dur = e.event === 'off' && e.duration_s != null
+        ? `<span class="pump-dur">ran ${fmtDuration(e.duration_s)}</span>` : '';
+      return `<div class="pump-event ${e.event}">
+        ${badge}
+        <span class="pump-ts">${fmtTs(e.ts)}${soil}</span>
+        ${dur}
+      </div>`;
+    }).join('');
+  } catch(e) {
+    document.getElementById('pump-timeline').innerHTML = '<div class="pump-empty">Could not load pump events.</div>';
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   NODE CARDS
+═══════════════════════════════════════════════════ */
+const IRR_FIELDS = [
+  ['air_temp','Air Temp','°C',1],
+  ['humidity','Humidity','%',0],
+  ['soil_moisture','Soil Moisture','%',0],
+  ['water_raw','Water Level (raw)','',0],
+  ['mq135_raw','MQ-135 (raw)','',0],
+  ['eco2_ppm','eCO₂ est.','ppm',0],
+  ['relay','Pump Relay','',-1],
+];
+const CHEM_FIELDS = [
+  ['soil_temp','Soil Temp','°C',1],
+  ['soil_moisture','Soil Moisture','%',1],
+  ['ph','pH','',1],
+  ['n','Nitrogen','',0],
+  ['p','Phosphorus','',0],
+  ['k','Potassium','',0],
+];
+
+function renderStatGrid(el, fields, data) {
+  el.innerHTML = fields.map(([k,l,u,dp]) => {
+    const v = data ? data[k] : null;
+    const isRelay = dp === -1;
+    const cls = isRelay ? (v ? 'relay-on' : 'relay-off') : '';
+    const valStr = fmt(v, dp);
+    return `<div class="stat-cell ${cls}">
+      <span class="stat-label">${l}</span>
+      <span class="stat-value">${valStr}<span class="stat-unit">${u}</span></span>
+    </div>`;
+  }).join('');
+}
+
+function updateWeatherCard(n1data) {
+  const d = n1data || {};
+  document.getElementById('wc-temp').textContent = fmt(d.air_temp,1) + (d.air_temp!=null ? ' °C' : '');
+  document.getElementById('wc-hum').textContent = fmt(d.humidity,0) + (d.humidity!=null ? '%' : '');
+  document.getElementById('wc-eco2').textContent = fmt(d.eco2_ppm,0) + (d.eco2_ppm!=null ? ' ppm' : '');
+  document.getElementById('wc-soil1').textContent = fmt(d.soil_moisture,0) + (d.soil_moisture!=null ? '%' : '');
+  document.getElementById('wc-water').textContent = fmt(d.water_raw,0);
+  document.getElementById('wc-mq135').textContent = fmt(d.mq135_raw,0);
+}
+
+/* ═══════════════════════════════════════════════════
+   RECOMMENDATIONS
+═══════════════════════════════════════════════════ */
+const REC_ICON = {bad:'🚨',warn:'⚠️',ok:'✅',info:'ℹ️'};
+function renderInsights(items) {
+  const el = document.getElementById('insights-list');
+  el.innerHTML = items.map(i => `
+    <div class="rec-item ${i.level}">
+      <span class="rec-icon">${REC_ICON[i.level]||'•'}</span>
+      <span>${i.msg}</span>
+    </div>`).join('');
+}
+
+/* ═══════════════════════════════════════════════════
+   ACTIVE ALERT BANNER
+═══════════════════════════════════════════════════ */
+function updateBanner(activeAlerts) {
+  currentActiveAlerts = activeAlerts || [];
+  const banner = document.getElementById('alertbanner');
+  const countEl = document.getElementById('alertcount');
+
+  if (!currentActiveAlerts.length) {
+    banner.classList.add('hidden');
+    document.documentElement.style.setProperty('--banner-h','0px');
+    countEl.style.display = 'none';
+    lastActiveKeys = new Set();
+    return;
+  }
+
+  // Update nav alert count badge
+  countEl.textContent = currentActiveAlerts.length;
+  countEl.style.display = '';
+
+  // Build a stable key from the set of active alert messages (mask numbers so fluctuating readings do not re-beep)
+  const normalizeMsg = m => (m || '').replace(/[\d.]+/g, '#');
+  const newKeys = new Set(currentActiveAlerts.map(a => normalizeMsg(a.msg)));
+  const keyStr = [...newKeys].sort().join('|');
+
+  banner.classList.remove('hidden');
+  document.getElementById('bannermsg').textContent =
+    currentActiveAlerts.length === 1 ? currentActiveAlerts[0].msg : `${currentActiveAlerts.length} active alerts: ${currentActiveAlerts[0].msg}…`;
+
+  // Adjust body padding for banner height after render
+  requestAnimationFrame(() => {
+    const h = banner.offsetHeight;
+    document.documentElement.style.setProperty('--banner-h', h + 'px');
+  });
+
+  // Beep only when new unique alerts appear (not on every refresh)
+  if (keyStr !== lastBeepKey) {
+    lastBeepKey = keyStr;
+    beep();
+  }
+  lastActiveKeys = newKeys;
+}
+
+/* ═══════════════════════════════════════════════════
+   ALERTS PAGE
+═══════════════════════════════════════════════════ */
+function setAlertFilter(f, btn) {
+  alertFilter = f;
+  alertsOffset = 0;
+  document.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  loadAlerts();
+}
+
+async function loadAlerts(append=false) {
+  if (!append) alertsOffset = 0;
+  try {
+    const active = alertFilter === 'active' ? 1 : 0;
+    const data = await fetch(`/api/alerts?limit=${ALERTS_PAGE + alertsOffset}&active=${active}`).then(r=>r.json());
+    if (!append) allAlertsCache = data;
+    else allAlertsCache = data;
+    renderAlerts(allAlertsCache);
+  } catch(e) {
+    document.getElementById('alerts-list').innerHTML = '<div class="alerts-empty">Could not load alerts.</div>';
+  }
+}
+
+async function loadMoreAlerts() {
+  alertsOffset += ALERTS_PAGE;
+  await loadAlerts(true);
+}
+
+function renderAlerts(rows) {
+  const el = document.getElementById('alerts-list');
+  const lm = document.getElementById('alerts-loadmore');
+
+  // Client-side filter for 'acked'
+  let visible = rows;
+  if (alertFilter === 'acked') visible = rows.filter(r => r.acked);
+  if (alertFilter === 'active') visible = rows; // server already filtered
+
+  document.getElementById('alerts-count').textContent = `${visible.length} alert${visible.length!==1?'s':''}`;
+
+  if (!visible.length) {
+    el.innerHTML = '<div class="alerts-empty">No alerts' + (alertFilter!=='all'?' in this filter':'') + '.</div>';
+    lm.style.display = 'none';
+    return;
+  }
+
+  el.innerHTML = visible.map(a => {
+    const cls = a.acked ? 'acked' : (a.level||'');
+    const ackBtn = !a.acked
+      ? `<button class="ack-btn" onclick="ackAlert(${a.id})" aria-label="Dismiss alert">Dismiss</button>`
+      : `<span class="ack-btn" style="opacity:.5;cursor:default">Dismissed</span>`;
+    const chan = a.channel && a.channel !== 'log' ? ` · ${a.channel}` : '';
+    const sent = a.sent ? ' · sent' : '';
+    return `<div class="alert-row ${a.level||''} ${cls}" id="alert-${a.id}">
+      <div class="alert-body">
+        <div class="alert-msg">${a.msg||'–'}</div>
+        <div class="alert-meta">
+          <span>${fmtTs(a.ts)}</span>
+          <span>Node ${a.node||'?'}</span>
+          <span>${a.level||''}${chan}${sent}</span>
+        </div>
+      </div>
+      ${ackBtn}
+    </div>`;
+  }).join('');
+
+  lm.style.display = visible.length >= ALERTS_PAGE + alertsOffset ? '' : 'none';
+}
+
+async function ackAlert(id) {
+  try {
+    await fetch(`/api/alerts/${id}/ack`, {method:'POST'});
+    // Optimistic update
+    const row = document.getElementById('alert-' + id);
+    if (row) { row.classList.add('acked'); row.querySelector('.ack-btn').outerHTML = '<span class="ack-btn" style="opacity:.5;cursor:default">Dismissed</span>'; }
+    await loadAlerts();
+    await loadAndRender();
+  } catch(e) { alert('Could not dismiss alert. Is the server running?'); }
+}
+
+/* ═══════════════════════════════════════════════════
+   STATUS BAR
+═══════════════════════════════════════════════════ */
+function updateStatus(nodes, now) {
+  const dot = document.getElementById('statusdot');
+  const txt = document.getElementById('statustext');
+  const condBadge = document.getElementById('cond-badge');
+  const weatherNote = document.getElementById('weather-note');
+  const n1 = nodes[1], n2 = nodes[2];
+  if (!n1 && !n2) {
+    dot.className = 'dot off'; txt.textContent = 'Waiting for first reading'; return;
+  }
+  const sim = [n1,n2].some(n => n && n.source === 'sim');
+  if (sim) {
+    dot.className = 'dot sim';
+    txt.innerHTML = '<b>Simulated data</b> (Demo Mode)';
+    if (condBadge) {
+      condBadge.textContent = 'SIMULATED DATA';
+      condBadge.style.background = 'var(--warn-bg)';
+      condBadge.style.color = 'var(--warn)';
+    }
+    if (weatherNote) {
+      weatherNote.textContent = 'Synthetic sensor readings generated by the software simulator. No physical sensors connected.';
+      weatherNote.style.color = '#ffdd99';
+    }
+  } else {
+    dot.className = 'dot live';
+    txt.innerHTML = '<b>Live</b> from field';
+    if (condBadge) {
+      condBadge.textContent = 'Measured';
+      condBadge.style.background = '';
+      condBadge.style.color = '';
+    }
+    if (weatherNote) {
+      weatherNote.textContent = 'All values are measured by on-field sensors. No external weather forecast.';
+      weatherNote.style.color = '';
+    }
+  }
+}
+
+function updateNodeAge(nodeNum, ts, now) {
+  const ageEl = document.getElementById(`n${nodeNum}-age`);
+  const subEl = document.getElementById(`n${nodeNum}-sub`);
+  if (!ts) {
+    ageEl.className = 'node-age none'; ageEl.textContent = 'No data';
+    if (subEl) subEl.textContent = 'Waiting for first reading';
+    return;
+  }
+  const secs = now - ts;
+  const cls = ageClass(secs, OFFLINE_S);
+  ageEl.className = 'node-age ' + cls;
+  ageEl.textContent = ageLabel(secs);
+  if (subEl) subEl.textContent = 'Updated ' + ageLabel(secs);
+}
+
+/* ═══════════════════════════════════════════════════
+   MAIN DATA FETCH & RENDER
+═══════════════════════════════════════════════════ */
+async function loadAndRender() {
+  try {
+    const histParams = currentTimeHours > 0
+      ? `hours=${currentTimeHours}&limit=500`
+      : 'limit=1000';
+    const [L, I, H, A] = await Promise.all([
+      fetch('/api/latest').then(r=>r.json()),
+      fetch('/api/insights').then(r=>r.json()),
+      fetch('/api/history?' + histParams).then(r=>r.json()),
+      fetch('/api/alerts?active=1').then(r=>r.json()).catch(()=>[]),
+    ]);
+
+    const now = L.now;
+    const n1 = L.nodes && L.nodes[1];
+    const n2 = L.nodes && L.nodes[2];
+
+    // Status bar
+    updateStatus(L.nodes || {}, now);
+
+    // Node age indicators
+    updateNodeAge(1, n1 && n1.ts, now);
+    updateNodeAge(2, n2 && n2.ts, now);
+
+    // Weather card (Node 1 air data)
+    updateWeatherCard(n1 && n1.data);
+
+    // Node cards
+    renderStatGrid(document.getElementById('irr-grid'), IRR_FIELDS, n1 && n1.data);
+    renderStatGrid(document.getElementById('chem-grid'), CHEM_FIELDS, n2 && n2.data);
+
+    // Recommendations
+    renderInsights(I);
+
+    // Active alert banner
+    updateBanner(A);
+
+    // Chart
+    drawChart(H);
+
+  } catch(e) {
+    document.getElementById('statustext').textContent = 'Cannot reach server';
+    document.getElementById('statusdot').className = 'dot off';
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   PUMP EVENTS REFRESH (less frequent)
+═══════════════════════════════════════════════════ */
+let pumpTick = 0;
+async function tick() {
+  await loadAndRender();
+  pumpTick++;
+  if (pumpTick % 3 === 0) await loadPumpEvents(); // refresh pump every 15s
+}
+
+/* ═══════════════════════════════════════════════════
+   PWA SERVICE WORKER REGISTRATION
+═══════════════════════════════════════════════════ */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
+
+/* ═══════════════════════════════════════════════════
+   RESIZE HANDLER
+═══════════════════════════════════════════════════ */
+window.addEventListener('resize', () => {
+  // Re-draw chart on resize using last fetched data
+  loadAndRender();
+});
+
+/* ═══════════════════════════════════════════════════
+   BOOT
+═══════════════════════════════════════════════════ */
+tick();
+loadPumpEvents();
+setInterval(tick, 5000);
 </script>
 </body>
 </html>

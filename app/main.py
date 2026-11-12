@@ -4,6 +4,7 @@ import csv, io, json, math, sqlite3, time
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, Response
+from fastapi.staticfiles import StaticFiles
 from app.alerts import router as alerts_router
 from app.anomaly import check as anomaly_check
 
@@ -58,18 +59,26 @@ def ingest(p: dict):
     ts = num(p.get("ts"))  # optional: lets the hub poller store the real time of older readings
     if ts is None or ts > time.time() + 5:
         ts = time.time()
-    with db() as c:
-        c.execute("INSERT INTO readings(ts,node,seq,rssi,source,data) VALUES(?,?,?,?,?,?)",
-                  (ts, node, seq, num(p.get("rssi")), p.get("source", "device"), json.dumps(d)))
+    c = db()
+    try:
+        with c:
+            c.execute("INSERT INTO readings(ts,node,seq,rssi,source,data) VALUES(?,?,?,?,?,?)",
+                      (ts, node, seq, num(p.get("rssi")), p.get("source", "device"), json.dumps(d)))
+    finally:
+        c.close()
     return {"ok": True, "node": node}
 
 
 def latest():
-    c, out = db(), {}
-    for n in (1, 2):
-        r = c.execute("SELECT * FROM readings WHERE node=? ORDER BY id DESC LIMIT 1", (n,)).fetchone()
-        if r:
-            out[n] = dict(ts=r["ts"], seq=r["seq"], rssi=r["rssi"], source=r["source"], data=json.loads(r["data"]))
+    c = db()
+    out = {}
+    try:
+        for n in (1, 2):
+            r = c.execute("SELECT * FROM readings WHERE node=? ORDER BY id DESC LIMIT 1", (n,)).fetchone()
+            if r:
+                out[n] = dict(ts=r["ts"], seq=r["seq"], rssi=r["rssi"], source=r["source"], data=json.loads(r["data"]))
+    finally:
+        c.close()
     return out
 
 
@@ -110,9 +119,29 @@ def insights():
 
 
 @app.get("/api/history")
-def history(node: int | None = None, limit: int = 100):
-    q = "SELECT * FROM readings" + (f" WHERE node={int(node)}" if node else "") + " ORDER BY id DESC LIMIT ?"
-    rows = db().execute(q, (min(limit, 2000),)).fetchall()
+def history(node: int | None = None, limit: int = 100, hours: float | None = None, since: float | None = None):
+    """Return readings. Optionally filter by node, limit, hours (last N hours), or since (Unix timestamp)."""
+    wheres = []
+    args = []
+    if node is not None:
+        wheres.append("node = ?")
+        args.append(int(node))
+    if hours is not None and hours > 0:
+        wheres.append("ts > ?")
+        args.append(time.time() - hours * 3600)
+    elif since is not None:
+        wheres.append("ts > ?")
+        args.append(since)
+    q = "SELECT * FROM readings"
+    if wheres:
+        q += " WHERE " + " AND ".join(wheres)
+    q += " ORDER BY id DESC LIMIT ?"
+    args.append(min(limit, 2000))
+    c = db()
+    try:
+        rows = c.execute(q, args).fetchall()
+    finally:
+        c.close()
     return [dict(ts=r["ts"], node=r["node"], seq=r["seq"], source=r["source"], **json.loads(r["data"]))
             for r in reversed(rows)]
 
@@ -127,6 +156,69 @@ def export_csv():
                     headers={"Content-Disposition": "attachment; filename=iiaas_readings.csv"})
 
 
+@app.get("/api/pump-events")
+def pump_events(limit: int = 100):
+    """
+    Derive pump ON/OFF events from Node 1 relay state transitions stored in `readings`.
+    Returns a list of events: {ts, event:'on'|'off', soil_moisture, duration_s (for OFF events)}.
+    No schema changes — reads from existing `readings` table only.
+    """
+    c = db()
+    try:
+        rows = c.execute(
+            "SELECT ts, data FROM readings WHERE node=1 ORDER BY id DESC LIMIT 2000"
+        ).fetchall()
+    finally:
+        c.close()
+    rows.reverse()
+    events = []
+    prev_relay = None
+    on_ts = None
+    on_moisture = None
+    for r in rows:
+        d = json.loads(r["data"])
+        relay = d.get("relay")
+        if relay is None:
+            continue
+        relay = bool(relay)
+        if prev_relay is None:
+            prev_relay = relay
+            if relay:
+                on_ts = r["ts"]
+                on_moisture = d.get("soil_moisture")
+            continue
+        if relay and not prev_relay:
+            # transition: OFF -> ON
+            on_ts = r["ts"]
+            on_moisture = d.get("soil_moisture")
+            events.append({"ts": r["ts"], "event": "on", "soil_moisture": on_moisture, "duration_s": None})
+        elif not relay and prev_relay:
+            # transition: ON -> OFF
+            duration = round(r["ts"] - on_ts, 1) if on_ts is not None else None
+            events.append({"ts": r["ts"], "event": "off", "soil_moisture": d.get("soil_moisture"),
+                           "duration_s": duration})
+            on_ts = None
+        prev_relay = relay
+    # Return most recent first, up to limit
+    events = list(reversed(events))[:min(limit, 500)]
+    return events
+
+
+# Mount static files for PWA assets (icons, manifest, sw.js)
+# index.html is still served explicitly via the route below
+app.mount("/static", StaticFiles(directory=str(BASE / "static")), name="static")
+
+
 @app.get("/")
 def index():
     return FileResponse(BASE / "static" / "index.html")
+
+
+@app.get("/sw.js")
+def sw():
+    return FileResponse(BASE / "static" / "sw.js", media_type="application/javascript")
+
+
+@app.get("/manifest.json")
+def manifest():
+    return FileResponse(BASE / "static" / "manifest.json", media_type="application/manifest+json")
