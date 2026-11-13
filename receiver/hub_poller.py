@@ -5,6 +5,10 @@ The hub prints its IP in the Serial Monitor at start-up ("Hub IP Address").
   python receiver/hub_poller.py --hub http://192.168.1.50
 """
 import argparse, json, time, urllib.request
+import os
+
+# If the server was started with IIAAS_KEY set, send it along.
+HEADERS = {"Content-Type": "application/json", **({"X-API-Key": os.environ["IIAAS_KEY"]} if os.environ.get("IIAAS_KEY") else {})}
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--hub", required=True, help="hub address, e.g. http://192.168.1.50")
@@ -18,7 +22,7 @@ def get(path):
 
 
 def post(p):
-    req = urllib.request.Request(a.url, json.dumps(p).encode(), {"Content-Type": "application/json"})
+    req = urllib.request.Request(a.url, json.dumps(p).encode(), HEADERS)
     urllib.request.urlopen(req, timeout=5)
 
 

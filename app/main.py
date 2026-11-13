@@ -1,9 +1,10 @@
 """IIAAS software v1: ingest -> SQLite -> rules -> dashboard.
 Run: uvicorn app.main:app --host 0.0.0.0 --port 8000"""
-import csv, io, json, math, sqlite3, time
+import csv, io, json, math, os, re, secrets, sqlite3, time
+from datetime import datetime, timezone
 from pathlib import Path
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, Response
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from app.alerts import router as alerts_router
 from app.anomaly import check as anomaly_check
@@ -15,6 +16,29 @@ CFG = dict(moist_low=40, moist_high=80, ph_low=5.5, ph_high=7.5, temp_high=38,
            offline_s=120, n_low=50, p_low=20, k_low=100)
 app = FastAPI(title="IIAAS")
 app.include_router(alerts_router)
+
+# --- Data safety -------------------------------------------------------------------------------
+MAX_BODY = 4096  # bytes. A real packet is under 500.
+# Garbage is rejected. Values that are only suspicious (soil 140%) are stored and flagged by app/anomaly.py.
+HARD = dict(air_temp=(-60, 150), soil_temp=(-60, 150), humidity=(-50, 200), soil_moisture=(-50, 200),
+            ph=(-5, 20), water_raw=(0, 70000), mq135_raw=(0, 70000), eco2_ppm=(0, 100000),
+            n=(0, 100000), p=(0, 100000), k=(0, 100000))
+
+
+@app.middleware("http")
+async def guard_ingest(request: Request, call_next):
+    """Size limit for every packet. If the environment variable IIAAS_KEY is set, senders must also
+    send the header X-API-Key with the same value (the scripts in this repo do that automatically)."""
+    if request.url.path == "/api/ingest" and request.method == "POST":
+        key = os.getenv("IIAAS_KEY")
+        if key and not secrets.compare_digest(request.headers.get("x-api-key", "").encode(), key.encode()):
+            return JSONResponse({"detail": "missing or wrong API key"}, status_code=401)
+        n = request.headers.get("content-length", "")
+        if not n.isdigit():
+            return JSONResponse({"detail": "Content-Length header required"}, status_code=411)
+        if int(n) > MAX_BODY:
+            return JSONResponse({"detail": f"packet too large (max {MAX_BODY} bytes)"}, status_code=413)
+    return await call_next(request)
 
 
 def db():
@@ -47,7 +71,17 @@ def normalize(p):
     else:
         d = dict(soil_temp=g("temperature", "soil_temp"), soil_moisture=g("moisture", "soil"),
                  ph=g("ph"), n=g("nitrogen", "n"), p=g("phosphorus", "p"), k=g("potassium", "k"))
+    for k, v in d.items():
+        lim = HARD.get(k)
+        if v is not None and lim and not lim[0] <= v <= lim[1]:
+            raise ValueError(f"{k}={v:g} is impossible, packet rejected")
     return int(nid), g("seq", "count"), d
+
+
+def clean_source(x):
+    """Source is just a label (hub, lora, sim, device). Anything odd becomes 'device'."""
+    x = str(x or "device").lower()
+    return x if re.fullmatch(r"[a-z0-9_-]{1,20}", x) else "device"
 
 
 @app.post("/api/ingest")
@@ -63,7 +97,7 @@ def ingest(p: dict):
     try:
         with c:
             c.execute("INSERT INTO readings(ts,node,seq,rssi,source,data) VALUES(?,?,?,?,?,?)",
-                      (ts, node, seq, num(p.get("rssi")), p.get("source", "device"), json.dumps(d)))
+                      (ts, node, seq, num(p.get("rssi")), clean_source(p.get("source")), json.dumps(d)))
     finally:
         c.close()
     return {"ok": True, "node": node}
@@ -146,12 +180,40 @@ def history(node: int | None = None, limit: int = 100, hours: float | None = Non
             for r in reversed(rows)]
 
 
+EXPORT_COLS = ["time_utc", "ts", "node", "seq", "rssi", "source", "air_temp", "humidity", "soil_moisture",
+               "water_raw", "mq135_raw", "eco2_ppm", "relay", "soil_temp", "ph", "n", "p", "k"]
+
+
 @app.get("/api/export.csv")
-def export_csv():
-    rows = history(None, 2000)
-    cols = ["ts", "node", "seq", "source", "air_temp", "humidity", "soil_moisture", "water_raw", "mq135_raw",
-            "eco2_ppm", "relay", "soil_temp", "ph", "n", "p", "k"]
-    buf = io.StringIO(); w = csv.DictWriter(buf, cols, extrasaction="ignore"); w.writeheader(); w.writerows(rows)
+def export_csv(node: int | None = None, hours: float | None = None,
+               since: float | None = None, until: float | None = None):
+    """ALL stored readings, oldest first, with no row limit.
+    Optional filters: node=1|2, hours=N (last N hours), since / until (Unix seconds)."""
+    wheres, args = [], []
+    if node is not None:
+        wheres.append("node = ?"); args.append(int(node))
+    if hours is not None and hours > 0:
+        wheres.append("ts > ?"); args.append(time.time() - hours * 3600)
+    elif since is not None:
+        wheres.append("ts > ?"); args.append(since)
+    if until is not None:
+        wheres.append("ts <= ?"); args.append(until)
+    q = "SELECT ts, node, seq, rssi, source, data FROM readings"
+    if wheres:
+        q += " WHERE " + " AND ".join(wheres)
+    q += " ORDER BY ts, id"
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(EXPORT_COLS)
+    c = db()
+    try:
+        for r in c.execute(q, args):
+            d = json.loads(r["data"])
+            when = datetime.fromtimestamp(r["ts"], timezone.utc).isoformat(timespec="seconds")
+            w.writerow([when, round(r["ts"], 3), r["node"], r["seq"], r["rssi"], r["source"]]
+                       + [d.get(k) for k in EXPORT_COLS[6:]])
+    finally:
+        c.close()
     return Response(buf.getvalue(), media_type="text/csv",
                     headers={"Content-Disposition": "attachment; filename=iiaas_readings.csv"})
 

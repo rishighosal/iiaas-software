@@ -17,6 +17,7 @@ so simulated readings are never represented as real hardware data.
 """
 
 import argparse
+import os
 import json
 import random
 import re
@@ -29,6 +30,9 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent
 DB = BASE / "iiaas.db"
 
+# If the server was started with IIAAS_KEY set, send it along.
+HEADERS = {"Content-Type": "application/json", **({"X-API-Key": os.environ["IIAAS_KEY"]} if os.environ.get("IIAAS_KEY") else {})}
+
 ap = argparse.ArgumentParser(description="IIAAS Demonstration Simulator")
 ap.add_argument("--url", default="http://localhost:8000/api/ingest", help="Ingest API URL")
 ap.add_argument("--scenario", default="normal",
@@ -40,7 +44,7 @@ a = ap.parse_args()
 
 
 def post(p):
-    req = urllib.request.Request(a.url, json.dumps(p).encode(), {"Content-Type": "application/json"})
+    req = urllib.request.Request(a.url, json.dumps(p).encode(), HEADERS)
     urllib.request.urlopen(req, timeout=5)
 
 

@@ -7,10 +7,14 @@ Readings are labelled source=sim, so the dashboard shows "Simulated data" (this 
   python tools/replay_lora.py --file my_dev_kit_log.txt --every 2
 """
 import argparse, binascii, json, re, sys, time, urllib.request
+import os
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from receiver.serial_receiver import parse_payload
+
+# If the server was started with IIAAS_KEY set, send it along.
+HEADERS = {"Content-Type": "application/json", **({"X-API-Key": os.environ["IIAAS_KEY"]} if os.environ.get("IIAAS_KEY") else {})}
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--file", default=str(Path(__file__).with_name("sample_lora_log.txt")))
@@ -37,7 +41,7 @@ while a.loops == 0 or n < a.loops:
             print("skipped:", e)
             continue
         p["rssi"], p["source"] = rssi, "sim"
-        req = urllib.request.Request(a.url, json.dumps(p).encode(), {"Content-Type": "application/json"})
+        req = urllib.request.Request(a.url, json.dumps(p).encode(), HEADERS)
         urllib.request.urlopen(req, timeout=5)
         print(f"replayed {p['node']}  rssi={rssi}  soil%={p.get('soil_percent')}  relay={p.get('relay')}")
         time.sleep(a.every)
