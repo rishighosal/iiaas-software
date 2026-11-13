@@ -2,7 +2,10 @@
 The hub sends CSV text such as  N1,210535,27.60,75.00,4095,0,4095,1,243,0.196,400  (JSON also works).
 Windows: --port COM5 (close the Arduino Serial Monitor first, only one program can use the port).
 Unsent packets are kept in unsent.jsonl."""
-import argparse, binascii, json, re, time, urllib.request
+import argparse, binascii, json, os, re, time, urllib.request
+
+# If the server was started with IIAAS_KEY set, send it along.
+HEADERS = {"Content-Type": "application/json", **({"X-API-Key": os.environ["IIAAS_KEY"]} if os.environ.get("IIAAS_KEY") else {})}
 
 # LoRa settings of the hub's Wio-E5 Mini, from its start-up log: 866 MHz, SF12, 125 kHz.
 INIT = ["AT", "AT+MODE=TEST", "AT+TEST=RFCFG,866,SF12,125,12,15,14,ON,OFF,OFF", "AT+TEST=RXLRPKT"]
@@ -42,7 +45,7 @@ def main():
 
     def post(p):
         try:
-            req = urllib.request.Request(a.url, json.dumps(p).encode(), {"Content-Type": "application/json"})
+            req = urllib.request.Request(a.url, json.dumps(p).encode(), HEADERS)
             urllib.request.urlopen(req, timeout=5)
         except Exception as e:
             print("post failed, saved:", type(e).__name__)
