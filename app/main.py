@@ -143,7 +143,7 @@ def insights():
             if not 0 <= ph <= 14: add("bad", "Node 2: pH reading is out of range. Check the sensor.")
             elif ph < CFG["ph_low"]: add("warn", f"Node 2: soil is acidic (pH {ph:.1f}). Test the soil before liming.")
             elif ph > CFG["ph_high"]: add("warn", f"Node 2: soil is alkaline (pH {ph:.1f}). Test the soil before treating.")
-        out.extend(anomaly_check(n, history(n, 200)))
+        out.extend(anomaly_check(n, history(n, 800)))
         for k, name in (("n", "Nitrogen"), ("p", "Phosphorus"), ("k", "Potassium")):
             v = d.get(k)
             if v is not None and v < CFG[k + "_low"]:
