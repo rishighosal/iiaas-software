@@ -31,3 +31,10 @@ def test_json_packets_still_work():
 def test_wrong_packets_are_rejected(bad):
     with pytest.raises(ValueError):
         parse_payload(bad)
+
+
+def test_real_n2_packet_from_the_pi_screenshot():
+    p = parse_payload("N2,3099976,29.00,0,5.60,102,65,225")
+    node, seq, d = normalize(p)
+    assert node == 2 and d["soil_temp"] == 29 and d["soil_moisture"] == 0 and d["ph"] == 5.6
+    assert (d["n"], d["p"], d["k"]) == (102, 65, 225)

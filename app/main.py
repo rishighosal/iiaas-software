@@ -47,6 +47,7 @@ def db():
     c.row_factory = sqlite3.Row
     c.execute("CREATE TABLE IF NOT EXISTS readings(id INTEGER PRIMARY KEY, ts REAL, node INT, "
               "seq INT, rssi REAL, source TEXT, data TEXT)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_readings_node_ts ON readings(node, ts)")
     return c
 
 
@@ -120,6 +121,46 @@ def latest():
 @app.get("/api/latest")
 def api_latest():
     return {"now": time.time(), "nodes": latest()}
+
+
+# --- Link status (is the hardware alive?) ------------------------------------------------------------
+def signal_label(rssi):
+    """LoRa at SF12 can still be heard below -120 dBm, so these bands are for LoRa links."""
+    if rssi is None:
+        return "unknown"
+    return "strong" if rssi >= -100 else "ok" if rssi >= -115 else "weak"
+
+
+@app.get("/api/link-status")
+def link_status():
+    """Per node: online or not, seconds since the last packet, data source, signal strength, packet counts."""
+    now, nodes = time.time(), {}
+    c = db()
+    try:
+        for n in (1, 2):
+            last = c.execute("SELECT ts, source FROM readings WHERE node = ? ORDER BY ts DESC LIMIT 1", (n,)).fetchone()
+            if not last:
+                nodes[str(n)] = dict(online=False, last_seen_s=None, source=None, rssi=None, signal="unknown",
+                                     packets_last_min=0, packets_last_hour=0)
+                continue
+            rs = [r[0] for r in c.execute("SELECT rssi FROM readings WHERE node = ? AND rssi IS NOT NULL "
+                                          "ORDER BY ts DESC LIMIT 10", (n,))]
+            rssi = round(sum(rs) / len(rs), 1) if rs else None
+            count = lambda secs: c.execute("SELECT COUNT(*) FROM readings WHERE node = ? AND ts > ?",
+                                           (n, now - secs)).fetchone()[0]
+            age = max(0.0, now - last["ts"])
+            nodes[str(n)] = dict(online=age <= CFG["offline_s"], last_seen_s=round(age, 1), source=last["source"],
+                                 rssi=rssi, signal=signal_label(rssi),
+                                 packets_last_min=count(60), packets_last_hour=count(3600))
+    finally:
+        c.close()
+    up = sum(1 for v in nodes.values() if v["online"])
+    return {"now": now, "overall": "ok" if up == 2 else "degraded" if up == 1 else "offline", "nodes": nodes}
+
+
+@app.get("/status")
+def status_page():
+    return FileResponse(BASE / "static" / "status.html")
 
 
 # --- Crop and threshold settings -------------------------------------------------------------------

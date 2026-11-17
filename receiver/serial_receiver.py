@@ -13,7 +13,7 @@ INIT = ["AT", "AT+MODE=TEST", "AT+TEST=RFCFG,866,SF12,125,12,15,14,ON,OFF,OFF", 
 # CSV order after "N1,<hub ms>": read from real packets (matches the hub's JSON for Node 1).
 N1_FIELDS = ["temperature", "humidity", "soil_raw", "soil_percent", "water_level_raw",
              "relay", "mq135_raw", "mq135_voltage", "eco2_ppm"]
-# ASSUMED, not yet seen on the air: same order as the hub's JSON for Node 2. Confirm with a real N2 line.
+# Confirmed with a real packet: N2,3099976,29.00,0,5.60,102,65,225
 N2_FIELDS = ["temperature", "moisture", "ph", "nitrogen", "phosphorus", "potassium"]
 
 
@@ -51,7 +51,6 @@ def main():
             print("post failed, saved:", type(e).__name__)
             open("unsent.jsonl", "a").write(json.dumps(p) + "\n")
 
-    print("Node 2 CSV field order is ASSUMED until a real N2 packet is confirmed.")
     rssi = None
     with serial.Serial(a.port, a.baud, timeout=1) as s:
         if a.init:
