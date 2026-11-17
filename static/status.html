@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>IIAAS link status</title>
+<style>
+:root{--bg:#f1f4ee;--surface:#fff;--ink:#1b2a20;--mut:#5a6a5f;--line:#d2dacd;--g:#2d6a3d;--w:#2a69ad;--warn:#9a6208;--bad:#b0342a;--radius:10px}
+@media(prefers-color-scheme:dark){:root{--bg:#111812;--surface:#1c261e;--ink:#e5ede7;--mut:#92a398;--line:#29362d;--g:#6fc283;--w:#72aae8;--warn:#e0a53c;--bad:#ef7a6c}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{display:flex;align-items:center;gap:16px;padding:14px 20px;border-bottom:1px solid var(--line);background:var(--surface)}
+header a{color:var(--w)}h1{font-size:1.15rem;margin:0}
+main{max-width:760px;margin:0 auto;padding:20px}
+#overall{padding:12px 16px;border-radius:var(--radius);border:1px solid var(--line);border-left:6px solid var(--mut);background:var(--surface);margin-bottom:18px;font-weight:600}
+#overall.ok{border-left-color:var(--g)}#overall.degraded{border-left-color:var(--warn)}#overall.offline{border-left-color:var(--bad)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px}
+.card h2{margin:0 0 10px;font-size:1.05rem;display:flex;justify-content:space-between;align-items:center}
+.pill{font-size:.8rem;padding:2px 10px;border-radius:99px;border:1px solid currentColor}.on{color:var(--g)}.off{color:var(--bad)}
+dl{margin:0}.r{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--line)}.r:last-child{border:0}
+dt{color:var(--mut)}dd{margin:0;font-weight:600;text-align:right}
+.strong{color:var(--g)}.ok{color:var(--w)}.weak{color:var(--warn)}
+small{color:var(--mut)}
+</style>
+</head>
+<body>
+<header><a href="/">&larr; Dashboard</a><h1>IIAAS link status</h1></header>
+<main>
+  <div id="overall" role="status">Checking...</div>
+  <div class="grid" id="grid"></div>
+  <p><small>A node is "online" if a packet arrived in the last 2 minutes. Signal strength (dBm) is the average of the last 10 LoRa packets: -100 or higher is strong, down to -115 is ok, lower is weak. Updates every 3 seconds.</small></p>
+</main>
+<script>
+const NAMES={1:"Node 1: air and irrigation",2:"Node 2: soil chemistry"};
+const SRC={lora:"LoRa",hub:"Hub (Wi-Fi)",sim:"Simulated or replay",device:"Device"};
+function el(t,c,x){const e=document.createElement(t);if(c)e.className=c;if(x!==undefined)e.textContent=x;return e}
+function ago(s){return s===null?"never":s<60?Math.round(s)+" s ago":Math.round(s/60)+" min ago"}
+function row(dl,k,v,c){const r=el("div","r");r.appendChild(el("dt",null,k));r.appendChild(el("dd",c,v));dl.appendChild(r)}
+async function tick(){
+  try{
+    const j=await (await fetch("/api/link-status")).json();
+    const o=document.getElementById("overall");
+    o.className=j.overall;
+    o.textContent={ok:"All nodes are reporting.",degraded:"One node is not reporting.",offline:"No node is reporting."}[j.overall];
+    const g=document.getElementById("grid");g.textContent="";
+    for(const n of ["1","2"]){
+      const d=j.nodes[n],card=el("div","card"),h=el("h2",null,NAMES[n]);
+      h.appendChild(el("span","pill "+(d.online?"on":"off"),d.online?"Online":"Offline"));card.appendChild(h);
+      const dl=el("dl");
+      row(dl,"Last packet",ago(d.last_seen_s));
+      row(dl,"Data source",d.source?(SRC[d.source]||d.source):"none yet");
+      row(dl,"Signal strength",d.rssi===null?"not available":d.rssi+" dBm ("+d.signal+")",d.signal);
+      row(dl,"Packets in the last minute",d.packets_last_min);
+      row(dl,"Packets in the last hour",d.packets_last_hour);
+      card.appendChild(dl);g.appendChild(card);
+    }
+  }catch(e){document.getElementById("overall").textContent="Cannot reach the server"}
+}
+tick();setInterval(tick,3000);
+</script>
+</body>
+</html>
