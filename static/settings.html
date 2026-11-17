@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>IIAAS settings</title>
+<style>
+:root{--bg:#f1f4ee;--surface:#fff;--ink:#1b2a20;--mut:#5a6a5f;--line:#d2dacd;--g:#2d6a3d;--w:#2a69ad;--warn:#9a6208;--bad:#b0342a;--radius:10px}
+@media(prefers-color-scheme:dark){:root{--bg:#111812;--surface:#1c261e;--ink:#e5ede7;--mut:#92a398;--line:#29362d;--g:#6fc283;--w:#72aae8;--warn:#e0a53c;--bad:#ef7a6c}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{display:flex;align-items:center;gap:16px;padding:14px 20px;border-bottom:1px solid var(--line);background:var(--surface)}
+header a{color:var(--w)}h1{font-size:1.15rem;margin:0}
+main{max-width:640px;margin:0 auto;padding:20px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-bottom:18px}
+label{display:block;font-weight:600;margin:12px 0 4px}small{color:var(--mut)}
+select,input{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+button{font:inherit;padding:10px 18px;border-radius:8px;border:1px solid var(--g);cursor:pointer;margin:16px 10px 0 0}
+#save{background:var(--g);color:var(--bg)}#reset{background:none;color:var(--g)}
+#msg{margin-top:12px;min-height:1.4em}.ok{color:var(--g)}.err{color:var(--bad)}.note{color:var(--warn)}
+:focus-visible{outline:3px solid var(--w);outline-offset:2px}
+</style>
+</head>
+<body>
+<header><a href="/">&larr; Dashboard</a><h1>IIAAS settings</h1></header>
+<main>
+  <div class="card">
+    <label for="crop">Crop</label>
+    <select id="crop"></select>
+    <small>These limits decide when the dashboard says "Irrigate" or "Test the soil". They are typical starting values to be confirmed with an agronomist. Soil moisture % depends on how the sensor is calibrated.</small>
+  </div>
+  <div class="card">
+    <div class="row">
+      <div><label for="moist_low">Irrigate below (soil moisture %)</label><input id="moist_low" type="number" step="1"></div>
+      <div><label for="moist_high">Too wet above (soil moisture %)</label><input id="moist_high" type="number" step="1"></div>
+      <div><label for="ph_low">Soil too acidic below (pH)</label><input id="ph_low" type="number" step="0.1"></div>
+      <div><label for="ph_high">Soil too alkaline above (pH)</label><input id="ph_high" type="number" step="0.1"></div>
+      <div><label for="temp_high">Heat stress above (&deg;C)</label><input id="temp_high" type="number" step="1"></div>
+    </div>
+    <p class="note"><small>Nitrogen, phosphorus and potassium limits are placeholders until the NPK sensor's units are confirmed, so they are not editable here.</small></p>
+    <button id="save">Save</button><button id="reset">Reset to crop defaults</button>
+    <div id="msg" role="status"></div>
+  </div>
+</main>
+<script>
+const F=["moist_low","moist_high","ph_low","ph_high","temp_high"], $=id=>document.getElementById(id);
+let data=null;
+function show(m,cls){const e=$("msg");e.textContent=m;e.className=cls||""}
+function fill(t){F.forEach(k=>$(k).value=t[k])}
+async function load(){
+  try{
+    data=await (await fetch("/api/settings")).json();
+    const sel=$("crop");sel.textContent="";
+    Object.entries(data.crops).forEach(([k,c])=>{const o=document.createElement("option");o.value=k;o.textContent=c.name;sel.appendChild(o)});
+    sel.value=data.crop;fill(data.thresholds);
+  }catch(e){show("Cannot reach the server","err")}
+}
+async function send(body,okMsg){
+  const r=await fetch("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  const j=await r.json();
+  if(!r.ok){show(typeof j.detail==="string"?j.detail:"Please check the values","err");return}
+  data=j;fill(j.thresholds);show(okMsg,"ok");
+}
+$("crop").addEventListener("change",()=>{fill(data.crops[$("crop").value]);show("Preview only. Press Save to use this crop.","note")});
+$("reset").addEventListener("click",()=>send({crop:$("crop").value},"Reset to the defaults for this crop."));
+$("save").addEventListener("click",()=>{
+  const base=data.crops[$("crop").value],o={};
+  F.forEach(k=>{const v=parseFloat($(k).value);if(!Number.isNaN(v)&&v!==base[k])o[k]=v});
+  send({crop:$("crop").value,overrides:o},"Saved. The dashboard advice now uses these limits.");
+});
+load();
+</script>
+</body>
+</html>

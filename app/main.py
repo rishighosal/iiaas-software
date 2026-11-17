@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from app.alerts import router as alerts_router
 from app.anomaly import check as anomaly_check
+from app.crops import CROPS, EDITABLE, effective_thresholds, validate_overrides
 
 BASE = Path(__file__).resolve().parent.parent
 DB = BASE / "iiaas.db"
@@ -121,8 +122,72 @@ def api_latest():
     return {"now": time.time(), "nodes": latest()}
 
 
+# --- Crop and threshold settings -------------------------------------------------------------------
+def read_settings():
+    c = db()
+    try:
+        c.execute("CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT)")
+        row = c.execute("SELECT value FROM settings WHERE key = 'farm'").fetchone()
+    finally:
+        c.close()
+    try:
+        return json.loads(row[0]) if row else {}
+    except (TypeError, ValueError):
+        return {}
+
+
+def save_settings(s):
+    with db() as c:
+        c.execute("CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT)")
+        c.execute("INSERT OR REPLACE INTO settings(key, value) VALUES('farm', ?)", (json.dumps(s),))
+
+
+def settings_view():
+    s = read_settings()
+    th = effective_thresholds(CFG, s)
+    crops = {}
+    for k, v in CROPS.items():
+        e = effective_thresholds(CFG, {"crop": k})
+        crops[k] = {"name": v["name"], **{x: e[x] for x in EDITABLE}}
+    return {"crop": s.get("crop", "general"), "overrides": s.get("overrides", {}),
+            "thresholds": {x: th[x] for x in EDITABLE}, "crops": crops}
+
+
+@app.get("/api/settings")
+def api_settings_get():
+    return settings_view()
+
+
+@app.post("/api/settings")
+def api_settings_set(body: dict):
+    """{"crop": "tea"} picks a crop and clears custom values. {"overrides": {"moist_low": 55}} sets your own."""
+    s = read_settings()
+    if "crop" in body:
+        if body["crop"] not in CROPS:
+            raise HTTPException(422, "unknown crop: " + str(body["crop"])[:30])
+        s["crop"] = body["crop"]
+        if "overrides" not in body:
+            s["overrides"] = {}
+    if "overrides" in body:
+        try:
+            s["overrides"] = validate_overrides(body["overrides"])
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+    th = effective_thresholds(CFG, s)
+    if th["moist_low"] >= th["moist_high"] or th["ph_low"] >= th["ph_high"]:
+        raise HTTPException(422, "each low value must be smaller than its high value")
+    save_settings(s)
+    return settings_view()
+
+
+@app.get("/settings")
+def settings_page():
+    return FileResponse(BASE / "static" / "settings.html")
+
+
 @app.get("/api/insights")
 def insights():
+    th = effective_thresholds(CFG, read_settings())
     l, now, out = latest(), time.time(), []
     add = lambda level, msg: out.append({"level": level, "msg": msg})
     for n in (1, 2):
@@ -130,24 +195,24 @@ def insights():
         if not r:
             add("warn", f"Node {n}: no data yet."); continue
         age = now - r["ts"]
-        if age > CFG["offline_s"]:
+        if age > th["offline_s"]:
             add("bad", f"Node {n} is offline. Last data {int(age)} s ago."); continue
         d = r["data"]; m = d.get("soil_moisture"); t = d.get("air_temp"); ph = d.get("ph")
-        if m is not None and m < CFG["moist_low"]:
-            add("bad", f"Node {n}: soil moisture {m:.0f}% is below {CFG['moist_low']}%. Irrigate.")
-        elif m is not None and m > CFG["moist_high"]:
+        if m is not None and m < th["moist_low"]:
+            add("bad", f"Node {n}: soil moisture {m:.0f}% is below {th['moist_low']}%. Irrigate.")
+        elif m is not None and m > th["moist_high"]:
             add("warn", f"Node {n}: soil moisture {m:.0f}% is high. Pause irrigation.")
-        if t is not None and t > CFG["temp_high"]:
+        if t is not None and t > th["temp_high"]:
             add("warn", f"Node {n}: air temperature {t:.1f} °C. Heat stress risk.")
         if ph is not None:
             if not 0 <= ph <= 14: add("bad", "Node 2: pH reading is out of range. Check the sensor.")
-            elif ph < CFG["ph_low"]: add("warn", f"Node 2: soil is acidic (pH {ph:.1f}). Test the soil before liming.")
-            elif ph > CFG["ph_high"]: add("warn", f"Node 2: soil is alkaline (pH {ph:.1f}). Test the soil before treating.")
+            elif ph < th["ph_low"]: add("warn", f"Node 2: soil is acidic (pH {ph:.1f}). Test the soil before liming.")
+            elif ph > th["ph_high"]: add("warn", f"Node 2: soil is alkaline (pH {ph:.1f}). Test the soil before treating.")
         out.extend(anomaly_check(n, history(n, 800)))
         for k, name in (("n", "Nitrogen"), ("p", "Phosphorus"), ("k", "Potassium")):
             v = d.get(k)
-            if v is not None and v < CFG[k + "_low"]:
-                add("info", f"Node 2: {name} {v:.0f} is under the placeholder limit {CFG[k + '_low']}. "
+            if v is not None and v < th[k + "_low"]:
+                add("info", f"Node 2: {name} {v:.0f} is under the placeholder limit {th[k + '_low']}. "
                             "Confirm sensor units and crop targets before advising fertilizer.")
     return out or [{"level": "ok", "msg": "All readings are within range."}]
 
